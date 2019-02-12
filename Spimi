@@ -1,0 +1,430 @@
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Scanner;
+import java.util.TreeMap;
+
+public class Spimi {
+	private static TreeMap<String, TreeMap<Long, Integer>> finalIndex = null;
+	private static TreeMap<Long, Long> docLengthMap = null; 
+	private static double avgDocLength = 139.33506349059226;
+	// String of stop words
+	private final static String stop = "a about above after again against all am an and any are arent as at be because been before being below between both but by cant cannot could couldnt did didnt do does doesnt doing dont down during each few for from further had hadnt has hasnt have havent having he hed hell hes her here heres hers herself him himself his how hows i id ill im ive if in into is isnt it its itself lets me more most mustnt my myself no nor not of off on once only or other ought our ours ourselves out over own same shant she shed shell shes should shouldnt so some such than that thats the their theirs them themselves then there theres these they theyd theyll theyre theyve this those through to too under until up very was wasnt we wed well were weve were werent what whats when whens where wheres which while who whos whom why whys with wont would wouldnt you youd youll youre youve your yours yourself yourselves";
+
+	// Demo
+	public static void main(String args[]) {
+		//createInvertedIndex();
+		//mergeBlocks(44);
+		connectToMergedIndex();
+		docLengths();
+		//andQuery("Democrats’ welfare and healthcare reform policies");
+		orQuery("Democrats’ welfare and healthcare reform policies");
+		//andQuery("Drug companies bankruptices");
+		orQuery("Drug companies bankruptcies");
+		//andQuery("George Bush");
+		orQuery("George Bush");
+	}
+	
+	// Retrieves merged index from disk
+	public static void connectToMergedIndex() {
+		Scanner sc = null;
+		try {
+			finalIndex = new TreeMap<String, TreeMap<Long, Integer>>();
+			sc = new Scanner(new FileInputStream("DISK.txt"));
+			while (sc.hasNextLine()) {
+				String line1 = sc.nextLine();
+				String[] splitLine1 = line1.split(" ");
+				finalIndex.put(splitLine1[0], new TreeMap<Long, Integer>());
+				for (int j = 1; j < splitLine1.length; j++) {
+					String[] idTF1 = splitLine1[j].split("=",2);
+					finalIndex.get(splitLine1[0]).put(Long.parseLong(idTF1[0]), Integer.parseInt(idTF1[1]));
+				}
+			}
+		}
+		catch (FileNotFoundException e) {
+			System.out.println("File not found");
+		} finally {
+			sc.close();
+			System.out.println("Connected to final index");
+			System.out.println();
+		}
+	}
+
+	// creates inverted index
+	// compressed parameter checks if index compression should be applied
+	public static void createInvertedIndex() {
+		long currentBlock = 1;		// current block number
+		long currentID = 1;			// current ID of news article being scanned
+
+		String fileName = "";
+		TreeMap<String, TreeMap<Long, Integer>> index = new TreeMap<String, TreeMap<Long, Integer>>();
+		Scanner sc = null;
+		PrintWriter out = null;
+		
+
+		try {
+			for (int i = 0; i <= 21; i++) { 	// .sgm file number iteration
+				if (i >= 10)
+					fileName = "reut2-0" + i + ".sgm";
+				else
+					fileName = "reut2-00" + i + ".sgm";
+				sc = new Scanner(new FileInputStream(fileName));
+
+				while (sc.hasNext()) {
+					String in = sc.next();
+					if (in.equals("</REUTERS>")) {		// condition to check if end of news article is reached
+						currentID++;
+						// condition simulates memory limit of 500 articles per block through currentID
+						if ((currentID != 1 & currentID % 500 == 1) || (currentID == 21579)) {
+							out = new PrintWriter(new FileOutputStream("BLOCK" + currentBlock + ".txt"));
+							// print term and docIDs to a text file
+							for (String term : index.keySet()) {
+								out.print(term + " ");
+								for (Map.Entry<Long, Integer> docIDTF : index.get(term).entrySet()) {
+									out.print(docIDTF.getKey() + "=" + docIDTF.getValue() + " ");
+								}
+								out.print("\n");
+							}
+							out.close();
+							index = new TreeMap<String, TreeMap<Long, Integer>>(); // releases memory
+							currentBlock++;
+						}
+					}
+					if (in.contains("<") || in.contains(">")) {	// checks if token is a tag
+						continue;
+					}
+
+					// accepts tokens composed of characters and converts tokens to lowercase
+					in = in.replaceAll("[^a-zA-Z\\s]", "").toLowerCase();
+ 
+					if (stop.contains(in))
+						continue;
+					if (index.get(in) == null) {
+						index.put(in, new TreeMap<Long, Integer>());
+					}
+					if (index.get(in).containsKey(currentID)) {
+						int docTF = index.get(in).get(currentID) + 1;
+						index.get(in).replace(currentID, docTF);
+						continue;
+					}
+					index.get(in).put(currentID, 1);
+				}
+			}
+		}
+
+		catch (FileNotFoundException e) {
+			System.out.println("File not found");
+		} 
+		finally {
+			sc.close();
+			System.out.println("Created inverted index");
+			System.out.println();
+		}
+	}
+
+	// merges index blocks from text files into one text file named "DISK.txt"
+	// blockLimit parameter represents how many index blocks should be merged
+	public static void mergeBlocks(int blockLimit) {
+		Scanner scan1 = null;
+		Scanner scan2 = null;
+		PrintWriter pw = null;
+		TreeMap<String, TreeMap<Long, Integer>> blockIndex = null;
+
+		try {
+			finalIndex = new TreeMap<String, TreeMap<Long, Integer>>();
+			blockIndex = new TreeMap<String, TreeMap<Long, Integer>>();
+			scan1 = new Scanner(new FileInputStream("BLOCK1.txt"));
+			pw = new PrintWriter(new FileOutputStream("DISK.txt"));
+
+			while (scan1.hasNextLine()) {
+				String line1 = scan1.nextLine();
+				String[] splitLine1 = line1.split(" ");
+				finalIndex.put(splitLine1[0], new TreeMap<Long, Integer>());
+				for (int j = 1; j < splitLine1.length; j++) {
+					String[] idTF1 = splitLine1[j].split("=",2);
+					finalIndex.get(splitLine1[0]).put(Long.parseLong(idTF1[0]), Integer.parseInt(idTF1[1]));
+				}
+			}
+
+			for (int i = 2; i <= blockLimit; i++) {
+				scan2 = new Scanner(new FileInputStream("BLOCK" + i + ".txt"));
+
+				while (scan2.hasNextLine()) {
+					String line2 = scan2.nextLine();
+					String[] splitLine2 = line2.split(" ");
+					blockIndex.put(splitLine2[0], new TreeMap<Long, Integer>());
+					for (int j = 1; j < splitLine2.length; j++) {
+						String[] idTF2 = splitLine2[j].split("=",2);
+						blockIndex.get(splitLine2[0]).put(Long.parseLong(idTF2[0]), Integer.parseInt(idTF2[1]));
+					}
+				}
+				for (String term : blockIndex.keySet()) {
+					for (Entry<Long, Integer> docIDTF : blockIndex.get(term).entrySet()) {
+						if (finalIndex.get(term) == null) {
+							finalIndex.put(term, new TreeMap<Long, Integer>());
+						}
+						finalIndex.get(term).put(docIDTF.getKey(), docIDTF.getValue());
+					}
+				}
+					
+				blockIndex = new TreeMap<String, TreeMap<Long, Integer>>(); // releases memory
+			}
+
+			for (String term : finalIndex.keySet()) {
+				pw.print(term + " ");
+				for (Entry<Long,Integer> docIDTF : finalIndex.get(term).entrySet())
+					pw.print(docIDTF.getKey() + "=" + docIDTF.getValue() + " ");
+				pw.print("\n");
+			}
+
+		}
+
+		catch (FileNotFoundException e) {
+			System.out.println("File not found");
+		} finally {
+			scan1.close();
+			pw.close();
+			System.out.println("Merge complete");
+			System.out.println();
+		}
+	}
+
+	// single keyword query
+	public static void singleQuery(String q) {
+		HashMap<Long, Double> rsvMap = new HashMap<Long, Double>();
+		System.out.println("Matches for single query: " + q);
+		q = q.toLowerCase();
+		if (stop.contains(q)) {
+			System.out.println("No matches\n");
+			return;
+		}
+		if (finalIndex.get(q) == null) {
+			System.out.println("No matches\n");
+			return;
+		}
+		for (Long docID : finalIndex.get(q).keySet()) {
+			double rsv = score(q, docID);
+			rsvMap.put(docID, rsv);
+		}
+		
+		List<Entry<Long, Double>> rsvList = new ArrayList<>(rsvMap.entrySet());
+		rsvList.sort(Entry.comparingByValue());
+		Collections.reverse(rsvList);
+		
+		Map<Long, Double> rsvResult = new LinkedHashMap<>();
+        for (Entry<Long, Double> rsvEntry : rsvList) {
+            rsvResult.put(rsvEntry.getKey(), rsvEntry.getValue());
+        }
+        
+        System.out.println("Number of results: " + rsvResult.size());
+		System.out.println(rsvResult.entrySet() + "\n");
+	}
+
+	// multiple keywords query containing at least one keyword (OR)
+	// outputs docIDs and how many keywords they contain
+	public static void orQuery(String q) {
+		HashMap<Long, Double> rsvMap = new HashMap<Long, Double>();
+		System.out.println("Matches for OR query: " + q);
+		String[] splitQ = q.split(" ");
+		int noMatchCounter = 0;
+		Map<Long, Integer> docIDCount = new HashMap<Long, Integer>();
+		
+		
+		for (String term : splitQ) {
+			term = term.toLowerCase();
+			if (!finalIndex.containsKey(term)) {
+				noMatchCounter++;
+				continue;
+			}
+			else {
+				for (Long docID : finalIndex.get(term).keySet()) {
+					if (docIDCount.containsKey(docID)) {
+						int matchCount = docIDCount.get(docID) + 1;
+						docIDCount.put(docID, matchCount);
+					} 
+					else {
+						docIDCount.put(docID, 1);
+					}
+				}
+			}
+		}
+		if (noMatchCounter == splitQ.length) {
+			System.out.println("No matches");
+			System.out.println("OR query complete\n");
+			return;
+		}
+        
+        
+        for (Entry<Long, Integer> docID : docIDCount.entrySet()) {
+			double rsv = score(q, docID.getKey());
+			rsvMap.put(docID.getKey(), rsv);
+		}
+		List<Entry<Long, Double>> rsvList = new ArrayList<>(rsvMap.entrySet());
+		rsvList.sort(Entry.comparingByValue());
+		Collections.reverse(rsvList);
+		
+		Map<Long, Double> rsvResult = new LinkedHashMap<>();
+        for (Entry<Long, Double> rsvEntry : rsvList) {
+            rsvResult.put(rsvEntry.getKey(), rsvEntry.getValue());
+        }
+        
+        if(rsvResult.isEmpty()) {
+        	System.out.println("No matches");
+			System.out.println("OR query complete\n");
+			return;
+        }
+        
+        System.out.println("Number of results: " + rsvResult.size());
+		System.out.println(rsvResult.entrySet());
+		System.out.println("OR query complete\n");
+	}
+
+	// multiple keywords query returning documents containing all the keywords (AND)
+	public static void andQuery(String q) {
+		HashMap<Long, Double> rsvMap = new HashMap<Long, Double>();
+		int stopCount = 0;
+		System.out.println("Matches for AND query: " + q);
+		String[] splitQ = q.split(" ");
+
+		Map<Long, Integer> docIDCount = new HashMap<Long, Integer>();
+		for (String term : splitQ) {
+			term = term.toLowerCase();
+			if (stop.contains(term)) {
+				stopCount++;
+			}
+			if (finalIndex.containsKey(term)) {
+				for (Long docID : finalIndex.get(term).keySet()) {
+					if (docIDCount.containsKey(docID)) {
+						int idCount = docIDCount.get(docID) + 1;
+						docIDCount.put(docID, idCount);
+					} 
+					else {
+						docIDCount.put(docID, 1);
+					}
+				}
+			}
+		}
+		
+		for (Entry<Long, Integer> docID : docIDCount.entrySet()) {
+			if (docID.getValue() == splitQ.length-stopCount) {
+				double rsv = score(q, docID.getKey());
+				rsvMap.put(docID.getKey(), rsv);
+			}
+		}
+		List<Entry<Long, Double>> rsvList = new ArrayList<>(rsvMap.entrySet());
+		rsvList.sort(Entry.comparingByValue());
+		Collections.reverse(rsvList);
+		
+		Map<Long, Double> rsvResult = new LinkedHashMap<>();
+        for (Entry<Long, Double> rsvEntry : rsvList) {
+            rsvResult.put(rsvEntry.getKey(), rsvEntry.getValue());
+        }
+        
+        if(rsvResult.isEmpty()) {
+        	System.out.println("No matches");
+			System.out.println("AND query complete\n");
+			return;
+        }
+        
+        System.out.println("Number of results: " + rsvResult.size());
+		System.out.println(rsvResult.entrySet());
+		System.out.println("AND query complete\n");
+	}
+	
+	// Calculate score using BM25 algorithm
+	public static double score(String q, Long doc) {
+		double numOfDocs = 21578;	// Number of documents in the collection
+		double k1 = 0.7;
+		double b = 0.3;
+		double sigmaLog = 0;
+		String[] splitQ = q.split(" ");
+		double rsv = 0;
+		long docTF = 0;
+		
+		for (String term : splitQ) {
+			term = term.toLowerCase();
+			if (!finalIndex.containsKey(term)) {
+				rsv+=0;
+				continue;
+			}
+			long df = finalIndex.get(term).size();	// document frequency of query term
+			if(df < 1) {
+				rsv+=0;
+				continue;
+			}
+			sigmaLog = (double)Math.log10(numOfDocs/df);
+			long dLength = docLengthMap.get(doc);
+			if(finalIndex.get(term).get(doc) == null) {
+				docTF = 0;
+			}
+			else {
+				docTF = finalIndex.get(term).get(doc);
+			}
+			rsv += (sigmaLog) * ( ((k1 + 1)*docTF) / ( (k1*(1-b)) + (b*(dLength/avgDocLength)) + docTF));
+			
+		}
+		return rsv;
+	}
+	
+	// Creates a TreeMap of documents and their lengths
+	public static void docLengths() {
+		Scanner sc = null;
+		String fileName = "";
+		long currentID = 1;
+		double totalLength = 0;
+		docLengthMap = new TreeMap<Long, Long>();
+		for(long i = 1; i<=21578; i++) {
+			docLengthMap.put(i, (long)0);
+		}
+
+		try {
+			for (int i = 0; i <= 21; i++) { 	// .sgm file number iteration
+				if (i >= 10)
+					fileName = "reut2-0" + i + ".sgm";
+				else
+					fileName = "reut2-00" + i + ".sgm";
+				sc = new Scanner(new FileInputStream(fileName));
+				
+				while (sc.hasNext()) {
+					String in = sc.next();
+					if (in.equals("</REUTERS>")) {		// checks if end of news article is reached
+						currentID++;
+					}
+					if (currentID == 21579){
+						continue;
+					} 
+					
+					if (in.contains("<") || in.contains(">")) {	// checks if token is a tag
+						continue;
+					}
+					long length = docLengthMap.get(currentID) + 1;
+					docLengthMap.replace(currentID, length);
+				}
+			}
+			
+			for (long id : docLengthMap.keySet()) {
+				totalLength += docLengthMap.get(id);
+				//System.out.println(id + "-" + docLengthMap.get(id));	// Displays doc length of each doc  
+				}
+			
+			avgDocLength = totalLength/21578;
+			System.out.println("Average document length: " + avgDocLength);
+		}
+		catch (FileNotFoundException e) {
+			System.out.println("File not found");
+		}
+		finally {
+			sc.close();
+			System.out.println("docLengths method complete\n");
+		}
+	}
+
+}
